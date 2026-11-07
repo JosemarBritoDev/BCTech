@@ -18,7 +18,26 @@ export const metadata: Metadata = {
     template: "%s | BCTech",
   },
   description:
-    "Ecossistema BCTech / BritosCode HQ — sistemas, produtos digitais e engenharia de software.",
+    "Ecossistema multi-SaaS da BritosCode.tech: BCModas, BC Health e BCTech Core com infraestrutura isolada, backups automatizados e suporte humano.",
+  applicationName: "BCTech",
+  authors: [{ name: "BritosCode.tech" }],
+  keywords: [
+    "BritosCode",
+    "BCTech",
+    "SaaS",
+    "ERP",
+    "gestão clínica",
+    "confecção",
+    "multi-tenant",
+  ],
+  openGraph: {
+    title: "BCTech | BritosCode HQ",
+    description:
+      "Software sob medida e infraestrutura isolada para operações que não podem parar.",
+    type: "website",
+    locale: "pt_BR",
+    siteName: "BCTech",
+  },
 };
 
 export default function RootLayout({
@@ -29,7 +48,7 @@ export default function RootLayout({
   return (
     <html lang="pt-BR">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-background font-sans text-foreground antialiased`}
       >
         {children}
       </body>

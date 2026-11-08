@@ -21,9 +21,15 @@ import {
   Wallet,
 } from "lucide-react";
 
+import {
+  getAdminSnapshot,
+  type AdminBillingStatus,
+} from "@/app/actions/admin-actions";
 import { DashboardShell, type DashboardNavItem } from "@/components/dashboard-shell";
 import { StatusBadge, type StatusTone } from "@/components/status-badge";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
+
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Painel Admin ERP",
@@ -38,44 +44,17 @@ const nav: DashboardNavItem[] = [
   { label: "Infraestrutura", href: "#infra", icon: Server },
 ];
 
-const metrics = [
-  {
-    label: "MRR Total",
-    value: "R$ 42.890",
-    change: "+12,4%",
-    hint: "vs. mês anterior",
-    icon: CircleDollarSign,
-    tone: "accent" as StatusTone,
-    trend: "up",
-  },
-  {
-    label: "Clientes ativos",
-    value: "128",
-    change: "+8",
-    hint: "novos este mês",
-    icon: Users,
-    tone: "accent" as StatusTone,
-    trend: "up",
-  },
-  {
-    label: "Instâncias em produção",
-    value: "37",
-    change: "+3",
-    hint: "containers ativos",
-    icon: Server,
-    tone: "accent" as StatusTone,
-    trend: "up",
-  },
-  {
-    label: "Chamados abertos",
-    value: "14",
-    change: "5 de alta prioridade",
-    hint: "SLA médio de 3h12",
-    icon: Ticket,
-    tone: "amber" as StatusTone,
-    trend: "flat",
-  },
-];
+const billingStatusMeta: Record<
+  AdminBillingStatus,
+  { label: string; tone: StatusTone }
+> = {
+  ACTIVE: { label: "Ativo", tone: "accent" },
+  OVERDUE: { label: "Inadimplente", tone: "red" },
+  INACTIVE: { label: "Inativo", tone: "zinc" },
+  CANCELLED: { label: "Cancelado", tone: "zinc" },
+  TRIAL: { label: "Trial", tone: "brand" },
+  NONE: { label: "Sem assinatura", tone: "zinc" },
+};
 
 const revenue = [
   { month: "Dez", value: 44 },
@@ -90,60 +69,6 @@ const revenue = [
   { month: "Set", value: 74 },
   { month: "Out", value: 81 },
   { month: "Nov", value: 88 },
-];
-
-const goals = [
-  { label: "MRR até R$ 50 mil", current: "R$ 42.890", percent: 86, tone: "brand" },
-  { label: "20 novos clientes", current: "13 / 20", percent: 65, tone: "accent" },
-  { label: "Churn abaixo de 2%", current: "1,4%", percent: 93, tone: "accent" },
-];
-
-const tenants = [
-  {
-    name: "Clínica Vida Plena",
-    segment: "Clínica",
-    products: ["BC Health"],
-    plan: "Growth",
-    mrr: "R$ 489",
-    status: "Ativo",
-    tone: "accent" as StatusTone,
-  },
-  {
-    name: "Ateliê Aurora",
-    segment: "Moda",
-    products: ["BCModas"],
-    plan: "Pro",
-    mrr: "R$ 349",
-    status: "Ativo",
-    tone: "accent" as StatusTone,
-  },
-  {
-    name: "Rede Bem-Estar",
-    segment: "Clínica",
-    products: ["BC Health", "BCTech Core"],
-    plan: "Enterprise",
-    mrr: "R$ 1.290",
-    status: "Inadimplente",
-    tone: "red" as StatusTone,
-  },
-  {
-    name: "Confecção Monte Carlo",
-    segment: "Confecção",
-    products: ["BCModas"],
-    plan: "Starter",
-    mrr: "R$ 199",
-    status: "Trial",
-    tone: "brand" as StatusTone,
-  },
-  {
-    name: "Studio Hera",
-    segment: "Estamparia",
-    products: ["BCModas"],
-    plan: "Pro",
-    mrr: "R$ 349",
-    status: "Cancelado",
-    tone: "zinc" as StatusTone,
-  },
 ];
 
 const nodes = [
@@ -201,7 +126,82 @@ function barColor(value: number) {
   return value >= 80 ? "bg-amber-400" : "bg-accent";
 }
 
-export default function AdminPage() {
+export default async function AdminPage() {
+  const {
+    metrics: adminMetrics,
+    tenants,
+    source,
+  } = await getAdminSnapshot();
+
+  const metrics = [
+    {
+      label: "MRR Total",
+      value: formatCurrency(adminMetrics.mrrTotal, {
+        maximumFractionDigits: 0,
+      }),
+      change: `${adminMetrics.activeSubscriptions} assinaturas ativas`,
+      hint: "receita recorrente mensal",
+      icon: CircleDollarSign,
+      trend: "up",
+    },
+    {
+      label: "Clientes ativos",
+      value: String(adminMetrics.activeClients),
+      change: `${adminMetrics.totalClients} no total`,
+      hint: `${adminMetrics.overdueClients} inadimplentes`,
+      icon: Users,
+      trend: adminMetrics.overdueClients > 0 ? "flat" : "up",
+    },
+    {
+      label: "Instâncias em produção",
+      value: "37",
+      change: "+3",
+      hint: "containers ativos",
+      icon: Server,
+      trend: "up",
+    },
+    {
+      label: "Chamados abertos",
+      value: String(adminMetrics.openTickets),
+      change: `${adminMetrics.highPriorityTickets} de alta prioridade`,
+      hint: "SLA médio de 3h12",
+      icon: Ticket,
+      trend: "flat",
+    },
+  ];
+
+  const mrrGoal = 50000;
+  const goals = [
+    {
+      label: "MRR até R$ 50 mil",
+      current: formatCurrency(adminMetrics.mrrTotal, {
+        maximumFractionDigits: 0,
+      }),
+      percent: Math.min(
+        100,
+        Math.round((adminMetrics.mrrTotal / mrrGoal) * 100),
+      ),
+      tone: "brand",
+    },
+    {
+      label: "20 novos clientes",
+      current: "13 / 20",
+      percent: 65,
+      tone: "accent",
+    },
+    {
+      label: "Churn abaixo de 2%",
+      current: "1,4%",
+      percent: 93,
+      tone: "accent",
+    },
+  ];
+
+  const averageTicket =
+    adminMetrics.activeSubscriptions > 0
+      ? adminMetrics.mrrTotal / adminMetrics.activeSubscriptions
+      : 0;
+
   return (
     <DashboardShell
       user={{
@@ -229,7 +229,9 @@ export default function AdminPage() {
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-surface px-3 py-1.5 text-xs text-zinc-400">
               <Activity className="size-3.5 text-accent" aria-hidden="true" />
-              Atualizado há 2 min
+              {source === "database"
+                ? "Dados reais via Prisma"
+                : "Demonstração · banco indisponível"}
             </span>
             <span className="inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-surface px-3 py-1.5 text-xs text-zinc-400">
               Últimos 30 dias
@@ -293,7 +295,9 @@ export default function AdminPage() {
               </div>
               <div className="text-left sm:text-right">
                 <p className="text-2xl font-semibold tracking-tight text-zinc-50">
-                  R$ 42.890
+                  {formatCurrency(adminMetrics.mrrTotal, {
+                    maximumFractionDigits: 0,
+                  })}
                 </p>
                 <p className="inline-flex items-center gap-1 text-xs font-medium text-accent">
                   <TrendingUp className="size-3.5" aria-hidden="true" />
@@ -391,7 +395,7 @@ export default function AdminPage() {
               href="#clientes"
               className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-brand transition-colors hover:text-fuchsia-300"
             >
-              Ver todos os 128 clientes
+              Ver todos os {adminMetrics.totalClients} clientes
               <ArrowUpRight className="size-4" aria-hidden="true" />
             </Link>
           </div>
@@ -425,64 +429,87 @@ export default function AdminPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-800/70">
-                  {tenants.map((tenant) => (
-                    <tr
-                      key={tenant.name}
-                      className="transition-colors hover:bg-surface-elevated/40"
-                    >
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-3">
-                          <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-zinc-800 bg-surface-elevated text-xs font-semibold text-brand">
-                            {tenant.name
-                              .split(" ")
-                              .slice(0, 2)
-                              .map((word) => word[0])
-                              .join("")}
-                          </span>
-                          <div>
-                            <p className="font-medium text-zinc-100">{tenant.name}</p>
-                            <p className="text-xs text-zinc-500">{tenant.segment}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="flex flex-wrap gap-1.5">
-                          {tenant.products.map((product) => (
-                            <span
-                              key={product}
-                              className="rounded-md border border-zinc-800 bg-background/60 px-2 py-0.5 text-[11px] text-zinc-300"
-                            >
-                              {product}
+                  {tenants.map((tenant) => {
+                    const meta = billingStatusMeta[tenant.status];
+
+                    return (
+                      <tr
+                        key={tenant.id}
+                        className="transition-colors hover:bg-surface-elevated/40"
+                      >
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-3">
+                            <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-zinc-800 bg-surface-elevated text-xs font-semibold text-brand">
+                              {tenant.name
+                                .split(" ")
+                                .slice(0, 2)
+                                .map((word) => word[0])
+                                .join("")}
                             </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-5 py-4 text-zinc-300">{tenant.plan}</td>
-                      <td className="px-5 py-4 font-medium text-zinc-100">
-                        {tenant.mrr}
-                      </td>
-                      <td className="px-5 py-4">
-                        <StatusBadge label={tenant.status} tone={tenant.tone} />
-                      </td>
-                      <td className="px-5 py-4 text-right">
-                        <Link
-                          href="#clientes"
-                          aria-label={`Detalhes de ${tenant.name}`}
-                          className="inline-grid size-8 place-items-center rounded-lg border border-zinc-800 text-zinc-400 transition-colors hover:border-brand/40 hover:text-brand"
-                        >
-                          <ExternalLink className="size-3.5" aria-hidden="true" />
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
+                            <div>
+                              <p className="font-medium text-zinc-100">
+                                {tenant.name}
+                              </p>
+                              <p className="text-xs text-zinc-500">
+                                {tenant.document}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-5 py-4">
+                          <div className="flex flex-wrap gap-1.5">
+                            {tenant.products.map((product) => (
+                              <span
+                                key={product}
+                                className="rounded-md border border-zinc-800 bg-background/60 px-2 py-0.5 text-[11px] text-zinc-300"
+                              >
+                                {product}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="px-5 py-4 text-zinc-300">
+                          {tenant.plan}
+                        </td>
+                        <td className="px-5 py-4 font-medium text-zinc-100">
+                          {formatCurrency(tenant.mrr, {
+                            maximumFractionDigits: 0,
+                          })}
+                        </td>
+                        <td className="px-5 py-4">
+                          <StatusBadge label={meta.label} tone={meta.tone} />
+                        </td>
+                        <td className="px-5 py-4 text-right">
+                          <Link
+                            href="#clientes"
+                            aria-label={`Detalhes de ${tenant.name}`}
+                            className="inline-grid size-8 place-items-center rounded-lg border border-zinc-800 text-zinc-400 transition-colors hover:border-brand/40 hover:text-brand"
+                          >
+                            <ExternalLink
+                              className="size-3.5"
+                              aria-hidden="true"
+                            />
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
             <div className="flex flex-col gap-2 border-t border-zinc-800/70 px-5 py-4 text-xs text-zinc-500 sm:flex-row sm:items-center sm:justify-between">
-              <span>Mostrando 5 de 128 clientes</span>
+              <span>
+                Mostrando {tenants.length} de {adminMetrics.totalClients}{" "}
+                clientes
+              </span>
               <span className="inline-flex items-center gap-1.5">
                 <Wallet className="size-3.5 text-accent" aria-hidden="true" />
-                Ticket médio: R$ 335,08 · Churn: 1,4%
+                Ticket médio:{" "}
+                {formatCurrency(averageTicket, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}{" "}
+                · Churn: 1,4%
               </span>
             </div>
           </div>

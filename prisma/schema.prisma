@@ -126,6 +126,7 @@ model Subscription {
   saasProductId        String
   status               SubscriptionStatus @default(ACTIVE)
   planName             String
+  amount               Decimal            @default(0) @db.Decimal(10, 2)
   asaasCustomerId      String?
   asaasSubscriptionId  String?
   currentPeriodEnd     DateTime?

@@ -1,7 +1,13 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import { useState, useTransition, type FormEvent } from "react";
 import { CircleCheck, Loader2, Send } from "lucide-react";
+
+import {
+  createTicket,
+  type TicketPriorityValue,
+} from "@/app/actions/ticket-actions";
 
 const products = ["BC Health", "BCModas", "BCTech Core"];
 const priorities = [
@@ -13,21 +19,51 @@ const priorities = [
 const fieldClassName =
   "w-full rounded-xl border border-zinc-800 bg-background px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 transition-colors focus:border-brand/60 focus:outline-none focus:ring-2 focus:ring-brand/20";
 
+type SubmittedTicket = {
+  protocol: string;
+  source: "database" | "mock";
+};
+
 export function TicketForm() {
-  const [submitted, setSubmitted] = useState(false);
-  const [protocol, setProtocol] = useState("");
-  const [sending, setSending] = useState(false);
+  const router = useRouter();
+  const [submitted, setSubmitted] = useState<SubmittedTicket | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSending(true);
 
-    // Simulação de abertura de chamado — substituir por Server Action/API.
-    window.setTimeout(() => {
-      setProtocol(`SUP-${Math.floor(1000 + Math.random() * 9000)}`);
-      setSending(false);
-      setSubmitted(true);
-    }, 600);
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const product = String(formData.get("product") ?? "");
+    const priority = String(
+      formData.get("priority") ?? "MEDIUM",
+    ) as TicketPriorityValue;
+    const title = String(formData.get("title") ?? "").trim();
+    const description = String(formData.get("description") ?? "").trim();
+
+    setError(null);
+
+    startTransition(async () => {
+      const result = await createTicket({
+        product,
+        priority,
+        title,
+        description,
+      });
+
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+
+      setSubmitted({
+        protocol: result.ticket.protocol,
+        source: result.source,
+      });
+      form.reset();
+      router.refresh();
+    });
   }
 
   if (submitted) {
@@ -41,13 +77,26 @@ export function TicketForm() {
             Chamado aberto com sucesso
           </h3>
           <p className="mt-1 text-sm text-zinc-400">
-            Protocolo <strong className="text-accent">{protocol}</strong>. Nossa
+            Protocolo{" "}
+            <strong className="text-accent">{submitted.protocol}</strong>. Nossa
             equipe responde em até 4 horas úteis.
+          </p>
+          <p
+            className={`mt-2 text-xs ${
+              submitted.source === "database" ? "text-accent" : "text-amber-300"
+            }`}
+          >
+            {submitted.source === "database"
+              ? "Chamado gravado na tabela Ticket via Prisma."
+              : "Registro em modo demonstração: o banco não está disponível."}
           </p>
         </div>
         <button
           type="button"
-          onClick={() => setSubmitted(false)}
+          onClick={() => {
+            setSubmitted(null);
+            setError(null);
+          }}
           className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-200 transition-colors hover:border-brand/50 hover:text-brand"
         >
           Abrir outro chamado
@@ -95,6 +144,7 @@ export function TicketForm() {
           name="title"
           type="text"
           required
+          minLength={3}
           maxLength={120}
           placeholder="Ex.: Erro ao emitir relatório de atendimentos"
           className={fieldClassName}
@@ -109,6 +159,7 @@ export function TicketForm() {
           id="ticket-description"
           name="description"
           required
+          minLength={10}
           rows={4}
           maxLength={2000}
           placeholder="Descreva o que aconteceu, quando e qual o impacto na sua operação."
@@ -116,21 +167,27 @@ export function TicketForm() {
         />
       </div>
 
+      {error ? (
+        <p role="alert" className="text-xs font-medium text-red-300">
+          {error}
+        </p>
+      ) : null}
+
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs text-zinc-500">
           SLA de primeira resposta: até 4 horas úteis.
         </p>
         <button
           type="submit"
-          disabled={sending}
+          disabled={isPending}
           className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {sending ? (
+          {isPending ? (
             <Loader2 className="size-4 animate-spin" aria-hidden="true" />
           ) : (
             <Send className="size-4" aria-hidden="true" />
           )}
-          Abrir chamado
+          {isPending ? "Enviando..." : "Abrir chamado"}
         </button>
       </div>
     </form>

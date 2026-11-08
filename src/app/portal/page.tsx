@@ -17,12 +17,26 @@ import {
   MessageCircle,
   Package,
   Receipt,
+  Shirt,
+  ShoppingCart,
   Wallet,
 } from "lucide-react";
 
+import {
+  getSaasCatalog,
+  type SaasProductView,
+} from "@/app/actions/saas-actions";
+import {
+  listTickets,
+  type TicketPriorityValue,
+  type TicketStatusValue,
+} from "@/app/actions/ticket-actions";
 import { DashboardShell, type DashboardNavItem } from "@/components/dashboard-shell";
 import { StatusBadge, type StatusTone } from "@/components/status-badge";
 import { TicketForm } from "@/components/ticket-form";
+import { formatDate } from "@/lib/utils";
+
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Portal do Cliente",
@@ -38,7 +52,48 @@ const nav: DashboardNavItem[] = [
   { label: "Suporte", href: "#suporte", icon: LifeBuoy },
 ];
 
-const summary = [
+const productIcons: Record<string, typeof HeartPulse> = {
+  "bc-health": HeartPulse,
+  bcmodas: Shirt,
+  "bctech-core": Boxes,
+  "material-checkout": ShoppingCart,
+};
+
+const portalPlans: Record<string, string> = {
+  "bc-health": "Growth · Clínica",
+  bcmodas: "Pro · Varejo",
+  "bctech-core": "Core · Incluído no plano",
+  "material-checkout": "Beta · Lista de espera",
+};
+
+const productStatusMeta: Record<
+  SaasProductView["status"],
+  { label: string; tone: StatusTone }
+> = {
+  ACTIVE: { label: "Ativo", tone: "accent" },
+  BETA: { label: "Beta", tone: "brand" },
+  DEMO: { label: "Demo", tone: "brand" },
+};
+
+const ticketStatusMeta: Record<
+  TicketStatusValue,
+  { label: string; tone: StatusTone }
+> = {
+  OPEN: { label: "Aberto", tone: "amber" },
+  IN_PROGRESS: { label: "Em andamento", tone: "brand" },
+  RESOLVED: { label: "Resolvido", tone: "accent" },
+};
+
+const priorityMeta: Record<
+  TicketPriorityValue,
+  { label: string; tone: StatusTone }
+> = {
+  LOW: { label: "Baixa", tone: "zinc" },
+  MEDIUM: { label: "Média", tone: "brand" },
+  HIGH: { label: "Alta", tone: "red" },
+};
+
+const billingSummary = [
   {
     label: "Plano atual",
     value: "Growth",
@@ -52,38 +107,6 @@ const summary = [
     hint: "Vence em 10/11/2026",
     icon: CreditCard,
     badge: { label: "Em aberto", tone: "amber" as StatusTone },
-  },
-  {
-    label: "Chamados abertos",
-    value: "1",
-    hint: "SLA de 4h úteis",
-    icon: LifeBuoy,
-    badge: { label: "Em andamento", tone: "brand" as StatusTone },
-  },
-];
-
-const saasProducts = [
-  {
-    name: "BC Health",
-    description:
-      "Agenda, prontuário eletrônico, faturamento e indicadores da clínica.",
-    icon: HeartPulse,
-    plan: "Growth · Clínica",
-    status: "Ativo",
-    tone: "accent" as StatusTone,
-    url: "https://bchealth.britoscode.tech",
-    lastAccess: "Acessado hoje, 08:42",
-  },
-  {
-    name: "BCTech Core",
-    description:
-      "Identidade, billing, tenants e central de suporte do ecossistema.",
-    icon: Boxes,
-    plan: "Core · Incluído no plano",
-    status: "Incluído",
-    tone: "brand" as StatusTone,
-    url: "https://bctech.britoscode.tech",
-    lastAccess: "Acessado ontem, 17:10",
   },
 ];
 
@@ -155,7 +178,46 @@ const channels = [
   },
 ];
 
-export default function PortalPage() {
+export default async function PortalPage() {
+  const [catalog, ticketList] = await Promise.all([
+    getSaasCatalog(),
+    listTickets(),
+  ]);
+
+  const saasProducts = catalog.products.map((product) => {
+    const meta = productStatusMeta[product.status];
+
+    return {
+      name: product.name,
+      description: product.description,
+      icon: productIcons[product.slug] ?? Boxes,
+      plan: portalPlans[product.slug] ?? "Plano BritosCode",
+      status: meta.label,
+      tone: meta.tone,
+      url: product.demoUrl ?? "#suporte",
+      lastAccess: product.demoUrl
+        ? "Ambiente disponível"
+        : "Fale com o suporte",
+    };
+  });
+
+  const summary = [
+    ...billingSummary,
+    {
+      label: "Chamados abertos",
+      value: String(ticketList.openCount),
+      hint:
+        ticketList.inProgressCount > 0
+          ? `${ticketList.inProgressCount} em andamento · SLA de 4h úteis`
+          : "SLA de 4h úteis",
+      icon: LifeBuoy,
+      badge:
+        ticketList.openCount > 0
+          ? { label: "Ação necessária", tone: "amber" as StatusTone }
+          : { label: "Em dia", tone: "accent" as StatusTone },
+    },
+  ];
+
   return (
     <DashboardShell
       user={{
@@ -182,7 +244,9 @@ export default function PortalPage() {
           </div>
           <span className="inline-flex w-fit items-center gap-2 rounded-full border border-zinc-800 bg-surface px-3 py-1.5 text-[11px] text-zinc-400">
             <Gauge className="size-3.5 text-accent" aria-hidden="true" />
-            Dados de demonstração · tenant fictício
+            {catalog.source === "database"
+              ? "Dados sincronizados via Prisma"
+              : "Dados de demonstração · banco indisponível"}
           </span>
         </section>
 
@@ -464,6 +528,70 @@ export default function PortalPage() {
                 <ArrowUpRight className="size-3.5" aria-hidden="true" />
               </a>
             </div>
+          </div>
+
+          <div className="mt-4 overflow-hidden rounded-2xl border border-zinc-800 bg-surface">
+            <div className="flex flex-col gap-2 border-b border-zinc-800 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-zinc-100">
+                  Chamados recentes
+                </h3>
+                <p className="mt-0.5 text-xs text-zinc-500">
+                  Histórico consultado na tabela Ticket via Prisma.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
+                <span className="rounded-full border border-amber-400/25 bg-amber-400/5 px-2.5 py-1 text-amber-300">
+                  {ticketList.openCount} abertos
+                </span>
+                <span className="rounded-full border border-brand/25 bg-brand/5 px-2.5 py-1 text-brand">
+                  {ticketList.inProgressCount} em andamento
+                </span>
+                <span className="rounded-full border border-accent/25 bg-accent/5 px-2.5 py-1 text-accent">
+                  {ticketList.resolvedCount} resolvidos
+                </span>
+              </div>
+            </div>
+
+            {ticketList.tickets.length > 0 ? (
+              <ul className="divide-y divide-zinc-800/70">
+                {ticketList.tickets.slice(0, 6).map((ticket) => {
+                  const status = ticketStatusMeta[ticket.status];
+                  const priority = priorityMeta[ticket.priority];
+
+                  return (
+                    <li
+                      key={ticket.id}
+                      className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-zinc-100">
+                          {ticket.title}
+                        </p>
+                        <p className="mt-1 truncate text-xs text-zinc-500">
+                          {ticket.productName} · {ticket.tenantName} ·{" "}
+                          <span className="font-mono">{ticket.protocol}</span> ·{" "}
+                          {formatDate(ticket.createdAt, {
+                            day: "2-digit",
+                            month: "2-digit",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 flex-wrap items-center gap-2">
+                        <StatusBadge label={priority.label} tone={priority.tone} />
+                        <StatusBadge label={status.label} tone={status.tone} />
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="px-5 py-6 text-sm text-zinc-500">
+                Nenhum chamado registrado ainda.
+              </p>
+            )}
           </div>
         </section>
       </div>

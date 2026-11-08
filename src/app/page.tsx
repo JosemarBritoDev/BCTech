@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   ArrowUpRight,
+  Boxes,
   CircleCheck,
   Clock,
   DatabaseBackup,
@@ -16,9 +17,16 @@ import {
   Zap,
 } from "lucide-react";
 
+import {
+  getSaasCatalog,
+  type SaasProductView,
+} from "@/app/actions/saas-actions";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { StatusBadge, type StatusTone } from "@/components/status-badge";
+import { formatDate } from "@/lib/utils";
+
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "BritosCode HQ — SaaS sob medida para operações críticas",
@@ -31,63 +39,51 @@ type Icon = ComponentType<{
   "aria-hidden"?: boolean | "true" | "false";
 }>;
 
-type Product = {
-  name: string;
-  tagline: string;
-  description: string;
-  icon: Icon;
-  status: string;
-  statusTone: StatusTone;
-  features: string[];
-  demoUrl?: string;
+const productIcons: Record<string, Icon> = {
+  bcmodas: Shirt,
+  "bc-health": HeartPulse,
+  "bctech-core": Boxes,
+  "material-checkout": ShoppingCart,
 };
 
-const products: Product[] = [
-  {
-    name: "BCModas",
-    tagline: "ERP para Confecção & Estamparia",
-    description:
-      "Do pedido à expedição: controle produção, fichas técnicas, estoque, estamparia e financeiro em uma única plataforma.",
-    icon: Shirt,
-    status: "Ativo",
-    statusTone: "accent",
-    features: [
-      "Gestão de produção e ordens de serviço",
-      "Fichas técnicas e controle de estamparia",
-      "PDV, estoque e financeiro integrados",
-    ],
-    demoUrl: "https://bcmodas.britoscode.tech",
-  },
-  {
-    name: "BC Health",
-    tagline: "Gestão Completa de Clínicas SaaS",
-    description:
-      "Agenda, prontuário eletrônico, faturamento e indicadores clínicos com conformidade LGPD e multi-unidade.",
-    icon: HeartPulse,
-    status: "Ativo",
-    statusTone: "accent",
-    features: [
-      "Agenda inteligente e prontuário eletrônico",
-      "Faturamento de convênios e particulares",
-      "Indicadores clínicos e financeiros em tempo real",
-    ],
-    demoUrl: "https://bchealth.britoscode.tech",
-  },
-  {
-    name: "Material Checkout",
-    tagline: "BCTech Core — em breve / beta",
-    description:
-      "Checkout de materiais e pedidos recorrentes para operações B2B, integrado ao ecossistema de identidade e billing.",
-    icon: ShoppingCart,
-    status: "Em breve / Beta",
-    statusTone: "brand",
-    features: [
-      "Catálogo B2B com tabelas de preço",
-      "Checkout e pedidos recorrentes",
-      "Integração nativa com BCModas e BC Health",
-    ],
-  },
-];
+const productTaglines: Record<string, string> = {
+  bcmodas: "ERP para Confecção & Estamparia",
+  "bc-health": "Gestão Completa de Clínicas SaaS",
+  "bctech-core": "Núcleo do ecossistema BritosCode",
+  "material-checkout": "Checkout B2B e pedidos recorrentes",
+};
+
+const productFeatures: Record<string, string[]> = {
+  bcmodas: [
+    "Gestão de produção e ordens de serviço",
+    "Fichas técnicas e controle de estamparia",
+    "PDV, estoque e financeiro integrados",
+  ],
+  "bc-health": [
+    "Agenda inteligente e prontuário eletrônico",
+    "Faturamento de convênios e particulares",
+    "Indicadores clínicos e financeiros em tempo real",
+  ],
+  "bctech-core": [
+    "Identidade e multi-tenancy unificados",
+    "Billing, assinaturas e cobranças integradas",
+    "Central de suporte e ambientes de demonstração",
+  ],
+  "material-checkout": [
+    "Catálogo B2B com tabelas de preço",
+    "Checkout e pedidos recorrentes",
+    "Integração nativa com BCModas e BC Health",
+  ],
+};
+
+const statusMeta: Record<
+  SaasProductView["status"],
+  { label: string; tone: StatusTone }
+> = {
+  ACTIVE: { label: "Ativo", tone: "accent" },
+  BETA: { label: "Beta", tone: "brand" },
+  DEMO: { label: "Demo", tone: "brand" },
+};
 
 const reasons = [
   {
@@ -113,14 +109,23 @@ const reasons = [
   },
 ];
 
-const stats = [
-  { value: "99,98%", label: "Uptime nos últimos 90 dias" },
-  { value: "128", label: "Clientes ativos no ecossistema" },
-  { value: "3", label: "Produtos SaaS em operação" },
-  { value: "4h", label: "SLA de primeira resposta" },
-];
+export default async function Home() {
+  const { products, demos, totals, source } = await getSaasCatalog();
+  const demoProductSlugs = new Set(demos.map((demo) => demo.productSlug));
 
-export default function Home() {
+  const stats = [
+    { value: "99,98%", label: "Uptime nos últimos 90 dias" },
+    {
+      value: String(totals.activeClients),
+      label: "Clientes ativos no ecossistema",
+    },
+    {
+      value: String(totals.activeProducts),
+      label: "Produtos SaaS em operação",
+    },
+    { value: String(totals.demos), label: "Ambientes demo disponíveis" },
+  ];
+
   return (
     <div className="min-h-screen bg-background">
       <SiteHeader />
@@ -224,22 +229,42 @@ export default function Home() {
                 implantação acompanhada pela equipe BritosCode.
               </p>
             </div>
-            <Link
-              href="/portal"
-              className="inline-flex items-center gap-2 text-sm font-medium text-brand transition-colors hover:text-fuchsia-300"
-            >
-              Já sou cliente
-              <ArrowUpRight className="size-4" aria-hidden="true" />
-            </Link>
+            <div className="flex flex-col items-start gap-2 sm:items-end">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-800 bg-surface px-2.5 py-1 text-[11px] text-zinc-400">
+                <span
+                  className={`size-1.5 rounded-full ${
+                    source === "database" ? "bg-accent" : "bg-amber-400"
+                  }`}
+                  aria-hidden="true"
+                />
+                {source === "database"
+                  ? "Catálogo sincronizado via Prisma"
+                  : "Catálogo de demonstração"}
+              </span>
+              <Link
+                href="/portal"
+                className="inline-flex items-center gap-2 text-sm font-medium text-brand transition-colors hover:text-fuchsia-300"
+              >
+                Já sou cliente
+                <ArrowUpRight className="size-4" aria-hidden="true" />
+              </Link>
+            </div>
           </div>
 
           <div className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
             {products.map((product) => {
-              const Icon = product.icon;
+              const Icon = productIcons[product.slug] ?? Boxes;
+              const features = productFeatures[product.slug] ?? [
+                product.description,
+              ];
+              const meta = statusMeta[product.status];
+              const tagline =
+                productTaglines[product.slug] ?? "SaaS BritosCode";
+              const hasDemo = demoProductSlugs.has(product.slug);
 
               return (
                 <article
-                  key={product.name}
+                  key={product.slug}
                   className="group relative flex flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-surface p-6 transition-all duration-300 hover:-translate-y-1 hover:border-brand/50 hover:shadow-[0_24px_70px_-36px_rgba(168,85,247,0.65)]"
                 >
                   <div
@@ -251,7 +276,7 @@ export default function Home() {
                     <span className="grid size-11 place-items-center rounded-xl border border-zinc-800 bg-surface-elevated text-brand">
                       <Icon className="size-5" aria-hidden="true" />
                     </span>
-                    <StatusBadge label={product.status} tone={product.statusTone} />
+                    <StatusBadge label={meta.label} tone={meta.tone} />
                   </div>
 
                   <div className="relative mt-5">
@@ -259,15 +284,21 @@ export default function Home() {
                       {product.name}
                     </h3>
                     <p className="mt-1 text-sm font-medium text-brand">
-                      {product.tagline}
+                      {tagline}
                     </p>
                     <p className="mt-3 text-sm leading-relaxed text-zinc-400">
                       {product.description}
                     </p>
+                    {hasDemo ? (
+                      <span className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-accent/25 bg-accent/5 px-2.5 py-1 text-[11px] font-medium text-accent">
+                        <Sparkles className="size-3" aria-hidden="true" />
+                        Ambiente demo ativo
+                      </span>
+                    ) : null}
                   </div>
 
                   <ul className="relative mt-5 space-y-2.5 border-t border-zinc-800/70 pt-5">
-                    {product.features.map((feature) => (
+                    {features.map((feature) => (
                       <li
                         key={feature}
                         className="flex items-start gap-2 text-sm text-zinc-400"
@@ -296,10 +327,14 @@ export default function Home() {
                       <div className="flex flex-col gap-2">
                         <span className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-brand/25 bg-brand/5 px-4 py-2.5 text-sm font-medium text-brand">
                           <Clock className="size-4" aria-hidden="true" />
-                          Em breve / Beta
+                          {product.status === "BETA"
+                            ? "Em breve / Beta"
+                            : "Em breve"}
                         </span>
                         <a
-                          href="mailto:contato@britoscode.tech?subject=Lista%20de%20espera%20—%20Material%20Checkout"
+                          href={`mailto:contato@britoscode.tech?subject=${encodeURIComponent(
+                            `Lista de espera — ${product.name}`,
+                          )}`}
                           className="inline-flex items-center justify-center gap-2 rounded-xl border border-zinc-800 px-4 py-2.5 text-sm font-medium text-zinc-300 transition-colors hover:border-brand/40 hover:text-brand"
                         >
                           Entrar na lista de espera
@@ -310,6 +345,68 @@ export default function Home() {
                 </article>
               );
             })}
+          </div>
+
+          <div className="mt-8 rounded-2xl border border-zinc-800 bg-surface/60 p-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h3 className="text-base font-semibold tracking-tight text-zinc-100">
+                  Ambientes de demonstração
+                </h3>
+                <p className="mt-1 text-sm text-zinc-500">
+                  Sandboxes temporários publicados a partir do catálogo do
+                  Supabase/Prisma.
+                </p>
+              </div>
+              <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-accent/25 bg-accent/5 px-2.5 py-1 text-[11px] font-medium text-accent">
+                <Sparkles className="size-3" aria-hidden="true" />
+                {demos.length} {demos.length === 1 ? "ativo" : "ativos"}
+              </span>
+            </div>
+
+            {demos.length > 0 ? (
+              <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {demos.map((demo) => (
+                  <li
+                    key={demo.id}
+                    className="flex flex-col rounded-xl border border-zinc-800/80 bg-background/40 p-4 transition-colors hover:border-brand/40"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate font-mono text-xs text-zinc-300">
+                        {demo.tenantSlug}
+                      </span>
+                      <StatusBadge
+                        label={demo.isClean ? "Limpo" : "Em uso"}
+                        tone={demo.isClean ? "accent" : "amber"}
+                      />
+                    </div>
+                    <p className="mt-2 text-sm font-medium text-zinc-100">
+                      {demo.productName}
+                    </p>
+                    <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-zinc-500">
+                      <Clock className="size-3.5" aria-hidden="true" />
+                      Expira em {formatDate(demo.expiresAt)}
+                    </p>
+                    {demo.demoUrl ? (
+                      <a
+                        href={demo.demoUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-brand transition-colors hover:text-fuchsia-300"
+                      >
+                        Abrir ambiente
+                        <ArrowUpRight className="size-3.5" aria-hidden="true" />
+                      </a>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-4 text-sm text-zinc-500">
+                Nenhum ambiente demo ativo no momento. Solicite uma demonstração
+                guiada para receber um sandbox temporário.
+              </p>
+            )}
           </div>
         </section>
 
